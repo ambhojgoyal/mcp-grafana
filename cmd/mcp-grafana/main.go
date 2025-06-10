@@ -67,21 +67,22 @@ func (dt *disabledTools) addTools(s *server.MCPServer) {
 	enabledTools := strings.Split(dt.enabledTools, ",")
 	maybeAddTools(s, tools.AddSearchTools, enabledTools, dt.search, "search")
 	maybeAddTools(s, tools.AddDatasourceTools, enabledTools, dt.datasource, "datasource")
-	maybeAddTools(s, tools.AddIncidentTools, enabledTools, dt.incident, "incident")
+	maybeAddTools(s, tools.AddAdminTools, enabledTools, dt.admin, "admin")
 	maybeAddTools(s, tools.AddPrometheusTools, enabledTools, dt.prometheus, "prometheus")
-	maybeAddTools(s, tools.AddLokiTools, enabledTools, dt.loki, "loki")
 	maybeAddTools(s, tools.AddAlertingTools, enabledTools, dt.alerting, "alerting")
 	maybeAddTools(s, tools.AddDashboardTools, enabledTools, dt.dashboard, "dashboard")
-	maybeAddTools(s, tools.AddOnCallTools, enabledTools, dt.oncall, "oncall")
-	maybeAddTools(s, tools.AddAssertsTools, enabledTools, dt.asserts, "asserts")
-	maybeAddTools(s, tools.AddSiftTools, enabledTools, dt.sift, "sift")
-	maybeAddTools(s, tools.AddAdminTools, enabledTools, dt.admin, "admin")
+	// maybeAddTools(s, tools.AddOnCallTools, enabledTools, dt.oncall, "oncall")
+	// maybeAddTools(s, tools.AddAssertsTools, enabledTools, dt.asserts, "asserts")
+	// maybeAddTools(s, tools.AddSiftTools, enabledTools, dt.sift, "sift")
+	// maybeAddTools(s, tools.AddIncidentTools, enabledTools, dt.incident, "incident")
+	// maybeAddTools(s, tools.AddLokiTools, enabledTools, dt.loki, "loki")
+
 }
 
 func newServer(dt disabledTools) *server.MCPServer {
 	s := server.NewMCPServer(
 		"mcp-grafana",
-		"0.1.0",
+		"0.1.1",
 	)
 	dt.addTools(s)
 	return s
