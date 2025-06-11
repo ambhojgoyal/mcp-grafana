@@ -34,7 +34,7 @@ type disabledTools struct {
 
 	search, datasource, incident,
 	prometheus, loki, alerting,
-	dashboard, oncall, asserts, sift, admin bool
+	dashboard, oncall, asserts, sift, admin, newrelic bool
 }
 
 // Configuration for the Grafana client.
@@ -44,7 +44,7 @@ type grafanaConfig struct {
 }
 
 func (dt *disabledTools) addFlags() {
-	flag.StringVar(&dt.enabledTools, "enabled-tools", "search,datasource,incident,prometheus,loki,alerting,dashboard,oncall,asserts,sift,admin", "A comma separated list of tools enabled for this server. Can be overwritten entirely or by disabling specific components, e.g. --disable-search.")
+	flag.StringVar(&dt.enabledTools, "enabled-tools", "search,datasource,incident,prometheus,loki,alerting,dashboard,oncall,asserts,sift,admin,newrelic", "A comma separated list of tools enabled for this server. Can be overwritten entirely or by disabling specific components, e.g. --disable-search.")
 
 	flag.BoolVar(&dt.search, "disable-search", false, "Disable search tools")
 	flag.BoolVar(&dt.datasource, "disable-datasource", false, "Disable datasource tools")
@@ -57,6 +57,7 @@ func (dt *disabledTools) addFlags() {
 	flag.BoolVar(&dt.asserts, "disable-asserts", false, "Disable asserts tools")
 	flag.BoolVar(&dt.sift, "disable-sift", false, "Disable sift tools")
 	flag.BoolVar(&dt.admin, "disable-admin", false, "Disable admin tools")
+	flag.BoolVar(&dt.newrelic, "disable-newrelic", false, "Disable New Relic tools")
 }
 
 func (gc *grafanaConfig) addFlags() {
@@ -71,6 +72,7 @@ func (dt *disabledTools) addTools(s *server.MCPServer) {
 	maybeAddTools(s, tools.AddPrometheusTools, enabledTools, dt.prometheus, "prometheus")
 	maybeAddTools(s, tools.AddAlertingTools, enabledTools, dt.alerting, "alerting")
 	maybeAddTools(s, tools.AddDashboardTools, enabledTools, dt.dashboard, "dashboard")
+	maybeAddTools(s, tools.AddNewRelicTools, enabledTools, dt.newrelic, "newrelic")
 	// maybeAddTools(s, tools.AddOnCallTools, enabledTools, dt.oncall, "oncall")
 	// maybeAddTools(s, tools.AddAssertsTools, enabledTools, dt.asserts, "asserts")
 	// maybeAddTools(s, tools.AddSiftTools, enabledTools, dt.sift, "sift")
@@ -88,7 +90,7 @@ func newServer(dt disabledTools) *server.MCPServer {
 	return s
 }
 
-func run(transport, addr, basePath string, logLevel slog.Level, dt disabledTools, gc grafanaConfig) error {
+func run(transport, addr, basePath string, endpointPath string, logLevel slog.Level, dt disabledTools, gc grafanaConfig) error {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 	s := newServer(dt)
 
@@ -110,9 +112,9 @@ func run(transport, addr, basePath string, logLevel slog.Level, dt disabledTools
 	case "streamable-http":
 		srv := server.NewStreamableHTTPServer(s, server.WithHTTPContextFunc(mcpgrafana.ComposedHTTPContextFunc(gc.debug)),
 			server.WithStateLess(true),
-			server.WithEndpointPath(basePath),
+			server.WithEndpointPath(endpointPath),
 		)
-		slog.Info("Starting Grafana MCP server using StreamableHTTP transport", "address", addr, "basePath", basePath)
+		slog.Info("Starting Grafana MCP server using StreamableHTTP transport", "address", addr, "endpointPath", endpointPath)
 		if err := srv.Start(addr); err != nil {
 			return fmt.Errorf("Server error: %v", err)
 		}
@@ -135,7 +137,8 @@ func main() {
 		"Transport type (stdio or sse)",
 	)
 	addr := flag.String("address", "localhost:8080", "The host and port to start the sse server on")
-	basePath := flag.String("base-path", "", "Base path for the sse or streamable-http server")
+	basePath := flag.String("base-path", "", "Base path for the sse server")
+	endpointPath := flag.String("endpoint-path", "/mcp", "Endpoint path for the streamable-http server")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	var dt disabledTools
 	dt.addFlags()
@@ -143,14 +146,7 @@ func main() {
 	gc.addFlags()
 	flag.Parse()
 
-	if transport == "streamable-http" {
-		if basePath == nil || *basePath == "" {
-			endpoint := "/mcp"
-			basePath = &endpoint
-		}
-	}
-
-	if err := run(transport, *addr, *basePath, parseLevel(*logLevel), dt, gc); err != nil {
+	if err := run(transport, *addr, *basePath, *endpointPath, parseLevel(*logLevel), dt, gc); err != nil {
 		panic(err)
 	}
 }
