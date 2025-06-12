@@ -23,10 +23,16 @@ type NRClient struct {
 }
 
 // NewNRClient creates a new New Relic client
-func NewNRClient(ctx context.Context) (*NRClient, error) {
-	apiKey := os.Getenv("NEW_RELIC_API_KEY")
+func NewNRClient(ctx context.Context, apiKeyParam string) (*NRClient, error) {
+	apiKey := apiKeyParam
+	
+	// Fall back to environment variable if parameter is empty
 	if apiKey == "" {
-		return nil, fmt.Errorf("NEW_RELIC_API_KEY environment variable is not set")
+		apiKey = os.Getenv("NEW_RELIC_API_KEY")
+	}
+	
+	if apiKey == "" {
+		return nil, fmt.Errorf("New Relic API key not provided and NEW_RELIC_API_KEY environment variable is not set")
 	}
 
 	return &NRClient{
@@ -78,32 +84,57 @@ func (c *NRClient) RunQuery(ctx context.Context, query string) (any, error) {
 type GetAppHealthParams struct {
 	AppName   string `json:"app_name" jsonschema:"required,description=The name of the application to get health data for"`
 	AccountID string `json:"account_id" jsonschema:"required,description=The New Relic account ID"`
+	ApiKey    string `json:"api_key,omitempty" jsonschema:"description=New Relic API Key. If not provided, will use the NEW_RELIC_API_KEY environment variable"`
 }
 
 func getAppHealth(ctx context.Context, args GetAppHealthParams) (any, error) {
-	client, err := NewNRClient(ctx)
+	client, err := NewNRClient(ctx, args.ApiKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating New Relic client: %w", err)
 	}
 
-	query := fmt.Sprintf(`
+	// First, search for the application by name to get metadata
+	entitySearchQuery := fmt.Sprintf(`
+	{
+		actor {
+			entitySearch(queryBuilder: {domain: APM, type: APPLICATION, name: "%s"}) {
+				results {
+					entities {
+						guid
+						alertSeverity
+					}
+				}
+			}
+		}
+	}`, args.AppName)
+
+	entityResult, err := client.RunQuery(ctx, entitySearchQuery)
+	if err != nil {
+		return nil, fmt.Errorf("searching for application entity: %w", err)
+	}
+
+	// Now use NRQL queries to get the health metrics
+	metricsQuery := fmt.Sprintf(`
 	{
 		actor {
 			account(id: %s) {
-				apmApplication(name: "%s") {
-					alertSeverity
-					summary {
-						errorRate
-						apdexScore
-						throughput
-						responseTime
-					}
+				nrql(query: "SELECT latest(apdexScore) as 'apdexScore', latest(errorRate) as 'errorRate', latest(throughput) as 'throughput', latest(responseTime) as 'responseTime' FROM ApplicationSummary WHERE appName = '%s'") {
+					results
 				}
 			}
 		}
 	}`, args.AccountID, args.AppName)
 
-	return client.RunQuery(ctx, query)
+	metricsResult, err := client.RunQuery(ctx, metricsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("getting application metrics: %w", err)
+	}
+
+	// Combine the results
+	return map[string]interface{}{
+		"entityInfo": entityResult,
+		"metrics": metricsResult,
+	}, nil
 }
 
 // GetAppHealth is a tool for retrieving application health data from New Relic
@@ -122,10 +153,11 @@ type GetSlowTransactionsParams struct {
 	AppName   string `json:"app_name" jsonschema:"required,description=The name of the application to get slow transactions for"`
 	AccountID string `json:"account_id" jsonschema:"required,description=The New Relic account ID"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"description=The maximum number of transactions to return (default: 5)"`
+	ApiKey    string `json:"api_key,omitempty" jsonschema:"description=New Relic API Key. If not provided, will use the NEW_RELIC_API_KEY environment variable"`
 }
 
 func getSlowTransactions(ctx context.Context, args GetSlowTransactionsParams) (any, error) {
-	client, err := NewNRClient(ctx)
+	client, err := NewNRClient(ctx, args.ApiKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating New Relic client: %w", err)
 	}
@@ -164,10 +196,11 @@ var GetSlowTransactions = mcpgrafana.MustTool(
 type RunCustomNRQLParams struct {
 	AccountID string `json:"account_id" jsonschema:"required,description=The New Relic account ID"`
 	NRQL      string `json:"nrql" jsonschema:"required,description=The NRQL query to execute"`
+	ApiKey    string `json:"api_key,omitempty" jsonschema:"description=New Relic API Key. If not provided, will use the NEW_RELIC_API_KEY environment variable"`
 }
 
 func runCustomNRQL(ctx context.Context, args RunCustomNRQLParams) (any, error) {
-	client, err := NewNRClient(ctx)
+	client, err := NewNRClient(ctx, args.ApiKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating New Relic client: %w", err)
 	}
