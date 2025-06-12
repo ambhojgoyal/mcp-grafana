@@ -28,19 +28,19 @@ var (
 	}
 )
 
-func promClientFromContext(ctx context.Context, uid string) (promv1.API, error) {
+func promClientFromContext(ctx context.Context, args ListPrometheusMetricMetadataParams) (promv1.API, error) {
 	// First check if the datasource exists
-	_, err := getDatasourceByUID(ctx, GetDatasourceByUIDParams{UID: uid})
+	_, err := getDatasourceByUID(ctx, GetDatasourceByUIDParams{UID: args.DatasourceUID, Url: args.Url, ApiKey: args.ApiKey})
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		grafanaURL             = mcpgrafana.GrafanaURLFromContext(ctx)
-		apiKey                 = mcpgrafana.GrafanaAPIKeyFromContext(ctx)
+		grafanaURL             = args.Url    //mcpgrafana.GrafanaURLFromContext(ctx)
+		apiKey                 = args.ApiKey //mcpgrafana.GrafanaAPIKeyFromContext(ctx)
 		accessToken, userToken = mcpgrafana.OnBehalfOfAuthFromContext(ctx)
 	)
-	url := fmt.Sprintf("%s/api/datasources/proxy/uid/%s", strings.TrimRight(grafanaURL, "/"), uid)
+	url := fmt.Sprintf("%s/api/datasources/proxy/uid/%s", strings.TrimRight(grafanaURL, "/"), args.DatasourceUID)
 	rt := api.DefaultRoundTripper
 	if accessToken != "" && userToken != "" {
 		rt = config.NewHeadersRoundTripper(&config.Headers{
@@ -74,10 +74,12 @@ type ListPrometheusMetricMetadataParams struct {
 	Limit          int    `json:"limit" jsonschema:"description=The maximum number of metrics to return"`
 	LimitPerMetric int    `json:"limitPerMetric" jsonschema:"description=The maximum number of metrics to return per metric"`
 	Metric         string `json:"metric" jsonschema:"description=The metric to query"`
+	Url            string `json:"url" jsonschema:"description=The grafana url to connect"`
+	ApiKey         string `json:"api_key" jsonschema:"description=The grafana api key"`
 }
 
 func listPrometheusMetricMetadata(ctx context.Context, args ListPrometheusMetricMetadataParams) (map[string][]promv1.Metadata, error) {
-	promClient, err := promClientFromContext(ctx, args.DatasourceUID)
+	promClient, err := promClientFromContext(ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("getting Prometheus client: %w", err)
 	}
@@ -110,6 +112,8 @@ type QueryPrometheusParams struct {
 	EndTime       string `json:"endTime,omitempty" jsonschema:"description=The end time. Required if queryType is 'range'\\, ignored if queryType is 'instant' Supported formats are RFC3339 or relative to now (e.g. 'now'\\, 'now-1.5h'\\, 'now-2h45m'). Valid time units are 'ns'\\, 'us' (or 'µs')\\, 'ms'\\, 's'\\, 'm'\\, 'h'\\, 'd'."`
 	StepSeconds   int    `json:"stepSeconds,omitempty" jsonschema:"description=The time series step size in seconds. Required if queryType is 'range'\\, ignored if queryType is 'instant'"`
 	QueryType     string `json:"queryType,omitempty" jsonschema:"description=The type of query to use. Either 'range' or 'instant'"`
+	Url           string `json:"url" jsonschema:"description=The grafana url to connect"`
+	ApiKey        string `json:"api_key" jsonschema:"description=The grafana api key"`
 }
 
 func parseTime(timeStr string) (time.Time, error) {
@@ -121,7 +125,11 @@ func parseTime(timeStr string) (time.Time, error) {
 }
 
 func queryPrometheus(ctx context.Context, args QueryPrometheusParams) (model.Value, error) {
-	promClient, err := promClientFromContext(ctx, args.DatasourceUID)
+	promClient, err := promClientFromContext(ctx, ListPrometheusMetricMetadataParams{
+		DatasourceUID: args.DatasourceUID,
+		Url:           args.Url,
+		ApiKey:        args.ApiKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("getting Prometheus client: %w", err)
 	}
@@ -183,10 +191,16 @@ type ListPrometheusMetricNamesParams struct {
 	Regex         string `json:"regex" jsonschema:"description=The regex to match against the metric names"`
 	Limit         int    `json:"limit,omitempty" jsonschema:"description=The maximum number of results to return"`
 	Page          int    `json:"page,omitempty" jsonschema:"description=The page number to return"`
+	Url           string `json:"url" jsonschema:"description=The grafana url to connect"`
+	ApiKey        string `json:"api_key" jsonschema:"description=The grafana api key"`
 }
 
 func listPrometheusMetricNames(ctx context.Context, args ListPrometheusMetricNamesParams) ([]string, error) {
-	promClient, err := promClientFromContext(ctx, args.DatasourceUID)
+	promClient, err := promClientFromContext(ctx, ListPrometheusMetricMetadataParams{
+		DatasourceUID: args.DatasourceUID,
+		Url:           args.Url,
+		ApiKey:        args.ApiKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("getting Prometheus client: %w", err)
 	}
@@ -301,10 +315,16 @@ type ListPrometheusLabelNamesParams struct {
 	StartRFC3339  string     `json:"startRfc3339,omitempty" jsonschema:"description=Optionally\\, the start time of the time range to filter the results by"`
 	EndRFC3339    string     `json:"endRfc3339,omitempty" jsonschema:"description=Optionally\\, the end time of the time range to filter the results by"`
 	Limit         int        `json:"limit,omitempty" jsonschema:"description=Optionally\\, the maximum number of results to return"`
+	Url           string     `json:"url" jsonschema:"description=The grafana url to connect"`
+	ApiKey        string     `json:"api_key" jsonschema:"description=The grafana api key"`
 }
 
 func listPrometheusLabelNames(ctx context.Context, args ListPrometheusLabelNamesParams) ([]string, error) {
-	promClient, err := promClientFromContext(ctx, args.DatasourceUID)
+	promClient, err := promClientFromContext(ctx, ListPrometheusMetricMetadataParams{
+		DatasourceUID: args.DatasourceUID,
+		Url:           args.Url,
+		ApiKey:        args.ApiKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("getting Prometheus client: %w", err)
 	}
@@ -360,10 +380,12 @@ type ListPrometheusLabelValuesParams struct {
 	StartRFC3339  string     `json:"startRfc3339,omitempty" jsonschema:"description=Optionally\\, the start time of the query"`
 	EndRFC3339    string     `json:"endRfc3339,omitempty" jsonschema:"description=Optionally\\, the end time of the query"`
 	Limit         int        `json:"limit,omitempty" jsonschema:"description=Optionally\\, the maximum number of results to return"`
+	Url           string     `json:"url" jsonschema:"description=The grafana url to connect"`
+	ApiKey        string     `json:"api_key" jsonschema:"description=The grafana api key"`
 }
 
 func listPrometheusLabelValues(ctx context.Context, args ListPrometheusLabelValuesParams) (model.LabelValues, error) {
-	promClient, err := promClientFromContext(ctx, args.DatasourceUID)
+	promClient, err := promClientFromContext(ctx, ListPrometheusMetricMetadataParams{DatasourceUID: args.DatasourceUID, Url: args.Url, ApiKey: args.ApiKey})
 	if err != nil {
 		return nil, fmt.Errorf("getting Prometheus client: %w", err)
 	}
